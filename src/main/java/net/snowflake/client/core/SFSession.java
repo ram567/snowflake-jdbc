@@ -4,7 +4,6 @@
 
 package net.snowflake.client.core;
 
-import static net.snowflake.client.core.HttpUtil.restoreDefaultJVMProxySettings;
 import static net.snowflake.client.core.QueryStatus.getStatusFromString;
 import static net.snowflake.client.core.QueryStatus.isAnError;
 
@@ -847,8 +846,6 @@ public class SFSession {
    */
   public void close() throws SFException, SnowflakeSQLException {
     logger.debug(" public void close()");
-
-    restoreDefaultJVMProxySettings();
 
     // stop heartbeat for this session
     stopHeartbeatForThisSession();

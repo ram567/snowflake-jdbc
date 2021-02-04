@@ -4,11 +4,26 @@
 
 package net.snowflake.client.core;
 
+import static net.snowflake.client.jdbc.SnowflakeUtil.*;
+import static org.apache.http.client.config.CookieSpecs.DEFAULT;
+import static org.apache.http.client.config.CookieSpecs.IGNORE_COOKIES;
+
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.http.apache.SdkProxyRoutePlanner;
 import com.google.common.base.Strings;
 import com.microsoft.azure.storage.OperationContext;
 import com.snowflake.client.jdbc.SnowflakeDriver;
+import java.io.*;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.Socket;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import javax.net.ssl.TrustManager;
 import net.snowflake.client.jdbc.ErrorCode;
 import net.snowflake.client.jdbc.RestRequest;
 import net.snowflake.client.jdbc.SnowflakeSQLException;
@@ -39,22 +54,6 @@ import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.ssl.SSLInitializationException;
 import org.apache.http.util.EntityUtils;
-
-import javax.net.ssl.TrustManager;
-import java.io.*;
-import java.net.InetSocketAddress;
-import java.net.Proxy;
-import java.net.Socket;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import static net.snowflake.client.jdbc.SnowflakeUtil.*;
-import static org.apache.http.client.config.CookieSpecs.DEFAULT;
-import static org.apache.http.client.config.CookieSpecs.IGNORE_COOKIES;
 
 public class HttpUtil {
   static final SFLogger logger = SFLoggerFactory.getLogger(HttpUtil.class);
@@ -639,7 +638,9 @@ public class HttpUtil {
     }
 
     httpUseProxy = systemGetProperty("http.useProxy");
-    if (Strings.isNullOrEmpty(httpUseProxy)) { httpUseProxy = "false";}
+    if (Strings.isNullOrEmpty(httpUseProxy)) {
+      httpUseProxy = "false";
+    }
     if (httpUseProxy.equalsIgnoreCase("true")) {
       String httpProxyHost = systemGetProperty("http.proxyHost");
       String httpProxyPort = systemGetProperty("http.proxyPort");
@@ -657,14 +658,6 @@ public class HttpUtil {
     } else {
       logger.debug("http.useProxy={}. JVM proxy not used.", httpUseProxy);
     }
-    if (useProxy) {
-      systemSetProperty("http.useProxy", "false");
-      systemSetProperty("http.proxyHost", "");
-      systemSetProperty("https.proxyHost", "");
-      systemSetProperty("http.proxyPort", "");
-      systemSetProperty("https.proxyPort", "");
-      logger.debug("JVM proxy parameters overridden by connection parameters proxy values.");
-    }
     logger.debug(
         "connection proxy parameters: use_proxy={}, proxy_host={}, proxy_port={}, proxy_user={}, proxy_password={}, non_proxy_hosts={}",
         useProxy,
@@ -673,9 +666,5 @@ public class HttpUtil {
         proxyUser,
         !Strings.isNullOrEmpty(proxyPassword) ? "***" : "(empty)",
         nonProxyHosts);
-  }
-
-  public static void restoreDefaultJVMProxySettings() {
-    systemSetProperty("http.useProxy", httpUseProxy);
   }
 }

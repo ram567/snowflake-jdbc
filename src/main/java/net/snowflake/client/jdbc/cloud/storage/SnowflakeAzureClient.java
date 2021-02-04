@@ -217,10 +217,8 @@ public class SnowflakeAzureClient implements SnowflakeStorageClient {
     try {
       // Get a reference to the BLOB, to retrieve its metadata
       CloudBlobContainer container = azStorageClient.getContainerReference(remoteStorageLocation);
-      CloudBlob blob =
-          (CloudBlockBlob)
-              container.getBlobReferenceFromServer(prefix, null, null, null, opContext);
-      blob.downloadAttributes();
+      CloudBlob blob = container.getBlobReferenceFromServer(prefix, null, null, null, opContext);
+      blob.downloadAttributes(null, null, opContext);
 
       // Get the user-defined BLOB metadata
       Map<String, String> userDefinedMetadata = blob.getMetadata();
@@ -360,15 +358,14 @@ public class SnowflakeAzureClient implements SnowflakeStorageClient {
         CloudBlobContainer container = azStorageClient.getContainerReference(remoteStorageLocation);
 
         CloudBlob blob =
-            (CloudBlockBlob)
-                container.getBlobReferenceFromServer(
-                    stageFilePath,
-                    null,
-                    null,
-                    null,
-                    opContext); // container.getBlockBlobReference(stageFilePath);
+            container.getBlobReferenceFromServer(
+                stageFilePath,
+                null,
+                null,
+                null,
+                opContext); // container.getBlockBlobReference(stageFilePath);
 
-        InputStream stream = blob.openInputStream();
+        InputStream stream = blob.openInputStream(null, null, opContext);
 
         Map<String, String> userDefinedMetadata = blob.getMetadata();
 
@@ -486,7 +483,7 @@ public class SnowflakeAzureClient implements SnowflakeStorageClient {
             opContext);
         logger.debug("Upload successful");
 
-        blob.uploadMetadata();
+        blob.uploadMetadata(null, null, opContext);
 
         // close any open streams in the "toClose" list and return
         for (FileInputStream is : toClose) IOUtils.closeQuietly(is);
