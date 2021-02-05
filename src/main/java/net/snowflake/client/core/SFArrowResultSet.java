@@ -99,20 +99,21 @@ public class SFArrowResultSet extends SFBaseResultSet implements DataConversionC
    * <p>The constructor will initialize the ResultSetMetaData.
    *
    * @param resultSetSerializable result data after parsing json
+   * @param session SFSession object
    * @param statement statement object
    * @param sortResult true if sort results otherwise false
    * @throws SQLException exception raised from general SQL layers
    */
   SFArrowResultSet(
       SnowflakeResultSetSerializableV1 resultSetSerializable,
+      SFSession session,
       SFStatement statement,
       boolean sortResult)
       throws SQLException {
-    this(resultSetSerializable, statement.getSession().getTelemetryClient(), sortResult);
+    this(resultSetSerializable, session.getTelemetryClient(), sortResult);
 
     // update the session db/schema/wh/role etc
     this.statement = statement;
-    SFSession session = this.statement.getSession();
     session.setDatabase(resultSetSerializable.getFinalDatabaseName());
     session.setSchema(resultSetSerializable.getFinalSchemaName());
     session.setRole(resultSetSerializable.getFinalRoleName());
@@ -122,7 +123,7 @@ public class SFArrowResultSet extends SFBaseResultSet implements DataConversionC
     useSessionTimezone = resultSetSerializable.getUseSessionTimezone();
 
     // update the driver/session with common parameters from GS
-    SessionUtil.updateSfDriverParamValues(this.parameters, statement.getSession());
+    SessionUtil.updateSfDriverParamValues(this.parameters, statement.getSFBaseSession());
 
     // if server gives a send time, log time it took to arrive
     if (resultSetSerializable.getSendResultTime() != 0) {

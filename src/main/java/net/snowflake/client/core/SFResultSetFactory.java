@@ -24,17 +24,20 @@ class SFResultSetFactory {
    */
   static SFBaseResultSet getResultSet(JsonNode result, SFStatement statement, boolean sortResult)
       throws SQLException {
+
+    // This should only be invoked from an SFSession connection
+    SFSession session = (SFSession) statement.getSFBaseSession();
     SnowflakeResultSetSerializableV1 resultSetSerializable =
-        SnowflakeResultSetSerializableV1.create(result, statement.getSession(), statement);
+        SnowflakeResultSetSerializableV1.create(result, session, statement);
 
     switch (resultSetSerializable.getQueryResultFormat()) {
       case ARROW:
-        return new SFArrowResultSet(resultSetSerializable, statement, sortResult);
+        return new SFArrowResultSet(resultSetSerializable, session, statement, sortResult);
       case JSON:
         return new SFResultSet(resultSetSerializable, statement, sortResult);
       default:
         throw new SnowflakeSQLLoggedException(
-            statement.getSession(),
+            statement.getSFBaseSession(),
             ErrorCode.INTERNAL_ERROR,
             "Unsupported query result format: "
                 + resultSetSerializable.getQueryResultFormat().name());

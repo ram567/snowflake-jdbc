@@ -52,7 +52,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
   // max field size limited to 16MB
   private final int maxFieldSize = 16777216;
 
-  SFStatement sfStatement;
+  SFBaseStatement sfBaseStatement;
 
   private boolean poolable;
 
@@ -111,7 +111,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     this.resultSetConcurrency = resultSetConcurrency;
     this.resultSetHoldability = resultSetHoldability;
 
-    sfStatement = (connection != null) ? new SFStatement(connection.getSfSession()) : null;
+    sfBaseStatement = (connection != null) ? connection.getHandler().getSFStatement() : null;
   }
 
   protected void raiseSQLExceptionIfStatementIsClosed() throws SQLException {
@@ -178,7 +178,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     is not supported for staging commands. */
     if (StmtUtil.checkStageManageCommand(sql) != null && parameterBindings != null) {
       throw new SnowflakeSQLLoggedException(
-          connection.getSfSession(),
+          connection.getSFBaseSession(),
           ErrorCode.UNSUPPORTED_STATEMENT_TYPE_IN_EXECUTION_API,
           StmtUtil.truncateSQL(sql));
     }
@@ -186,9 +186,9 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     SFBaseResultSet sfResultSet;
     try {
       sfResultSet =
-          sfStatement.execute(
-              sql, false, parameterBindings, SFStatement.CallingMethod.EXECUTE_UPDATE);
-      sfResultSet.setSession(this.connection.getSfSession());
+          sfBaseStatement.execute(
+              sql, parameterBindings, SFBaseStatement.CallingMethod.EXECUTE_UPDATE);
+      sfResultSet.setSession(this.connection.getSFBaseSession());
       updateCount = ResultUtil.calculateUpdateCount(sfResultSet);
       queryID = sfResultSet.getQueryId();
     } catch (SFException ex) {
@@ -203,7 +203,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
 
     if (updateCount == NO_UPDATES && updateQueryRequired) {
       throw new SnowflakeSQLLoggedException(
-          connection.getSfSession(),
+          connection.getSFBaseSession(),
           ErrorCode.UNSUPPORTED_STATEMENT_TYPE_IN_EXECUTION_API,
           StmtUtil.truncateSQL(sql));
     }
@@ -215,7 +215,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
    * Internal method for executing a query with bindings accepted.
    *
    * @param sql sql statement
-   * @param asyncExec execute query asychronously
+   * @param asyncExec execute query asynchronously
    * @param parameterBindings parameters bindings
    * @return query result set
    * @throws SQLException if @link{SFStatement.execute(String)} throws exception
@@ -225,10 +225,21 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
       throws SQLException {
     SFBaseResultSet sfResultSet;
     try {
-      sfResultSet =
-          sfStatement.execute(
-              sql, asyncExec, parameterBindings, SFStatement.CallingMethod.EXECUTE_QUERY);
-      sfResultSet.setSession(this.connection.getSfSession());
+      if (asyncExec) {
+        if (!connection.getHandler().supportsAsyncQuery()) {
+          throw new SQLFeatureNotSupportedException(
+              "Async execution not supported in current context.");
+        }
+        sfResultSet =
+            sfBaseStatement.asyncExecute(
+                sql, parameterBindings, SFBaseStatement.CallingMethod.EXECUTE_QUERY);
+      } else {
+        sfResultSet =
+            sfBaseStatement.execute(
+                sql, parameterBindings, SFBaseStatement.CallingMethod.EXECUTE_QUERY);
+      }
+
+      sfResultSet.setSession(this.connection.getSFBaseSession());
     } catch (SFException ex) {
       throw new SnowflakeSQLException(
           ex.getCause(), ex.getSqlState(), ex.getVendorCode(), ex.getParams());
@@ -239,9 +250,9 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     }
 
     if (asyncExec) {
-      resultSet = new SFAsyncResultSet(sfResultSet, this);
+      resultSet = connection.getHandler().createAsyncResultSet(sfResultSet, this);
     } else {
-      resultSet = new SnowflakeResultSetV1(sfResultSet, this);
+      resultSet = connection.getHandler().createResultSet(sfResultSet, this);
     }
 
     return getResultSet();
@@ -273,12 +284,12 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     SFBaseResultSet sfResultSet;
     try {
       sfResultSet =
-          sfStatement.execute(sql, false, parameterBindings, SFStatement.CallingMethod.EXECUTE);
-      sfResultSet.setSession(this.connection.getSfSession());
+          sfBaseStatement.execute(sql, parameterBindings, SFBaseStatement.CallingMethod.EXECUTE);
+      sfResultSet.setSession(this.connection.getSFBaseSession());
       if (resultSet != null) {
         openResultSets.add(resultSet);
       }
-      resultSet = new SnowflakeResultSetV1(sfResultSet, this);
+      resultSet = connection.getHandler().createResultSet(sfResultSet, this);
       queryID = sfResultSet.getQueryId();
 
       // Legacy behavior treats update counts as result sets for single-
@@ -286,7 +297,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
       // if CLIENT_SFSQL is not set, or if a statement
       // is multi-statement
       if (!sfResultSet.getStatementType().isGenerateResultSet()
-          && (!connection.getSfSession().isSfSQLMode() || sfStatement.hasChildren())) {
+          && (!connection.getSFBaseSession().isSfSQLMode() || sfBaseStatement.hasChildren())) {
         updateCount = ResultUtil.calculateUpdateCount(sfResultSet);
         if (resultSet != null) {
           openResultSets.add(resultSet);
@@ -333,7 +344,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     if (autoGeneratedKeys == Statement.NO_GENERATED_KEYS) {
       return execute(sql);
     } else {
-      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
     }
   }
 
@@ -341,14 +352,14 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
   public boolean execute(String sql, int[] columnIndexes) throws SQLException {
     logger.debug("execute(String sql, int[] columnIndexes)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
   public boolean execute(String sql, String[] columnNames) throws SQLException {
     logger.debug("execute(String sql, String[] columnNames)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   /**
@@ -416,7 +427,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
           updateCounts.intArr[i] = (int) cnt;
         } else {
           throw new SnowflakeSQLLoggedException(
-              connection.getSfSession(),
+              connection.getSFBaseSession(),
               ErrorCode.EXECUTE_BATCH_INTEGER_OVERFLOW.getMessageCode(),
               SqlState.NUMERIC_VALUE_OUT_OF_RANGE,
               i);
@@ -465,7 +476,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     if (autoGeneratedKeys == Statement.NO_GENERATED_KEYS) {
       return executeLargeUpdate(sql);
     } else {
-      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
     }
   }
 
@@ -473,28 +484,28 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
   public int executeUpdate(String sql, int[] columnIndexes) throws SQLException {
     logger.debug("executeUpdate(String sql, int[] columnIndexes)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
   public long executeLargeUpdate(String sql, int[] columnIndexes) throws SQLException {
     logger.debug("executeLargeUpdate(String sql, int[] columnIndexes)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
   public int executeUpdate(String sql, String[] columnNames) throws SQLException {
     logger.debug("executeUpdate(String sql, String[] columnNames)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
   public long executeLargeUpdate(String sql, String[] columnNames) throws SQLException {
     logger.debug("executeUpdate(String sql, String[] columnNames)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
@@ -557,16 +568,16 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
       resultSet.close();
     }
 
-    boolean hasResultSet = sfStatement.getMoreResults(current);
-    SFBaseResultSet sfResultSet = sfStatement.getResultSet();
+    boolean hasResultSet = sfBaseStatement.getMoreResults(current);
+    SFBaseResultSet sfResultSet = sfBaseStatement.getResultSet();
 
     if (hasResultSet) // result set returned
     {
-      sfResultSet.setSession(this.connection.getSfSession());
+      sfResultSet.setSession(this.connection.getSFBaseSession());
       if (resultSet != null) {
         openResultSets.add(resultSet);
       }
-      resultSet = new SnowflakeResultSetV1(sfResultSet, this);
+      resultSet = connection.getHandler().createResultSet(sfResultSet, this);
       updateCount = NO_UPDATES;
       return true;
     } else if (sfResultSet != null) // update count returned
@@ -578,7 +589,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
       try {
         updateCount = ResultUtil.calculateUpdateCount(sfResultSet);
       } catch (SFException ex) {
-        throw new SnowflakeSQLLoggedException(connection.getSfSession(), ex);
+        throw new SnowflakeSQLLoggedException(connection.getSFBaseSession(), ex);
       }
       return false;
     } else // no more results
@@ -637,7 +648,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
 
   private long getUpdateCountIfDML() throws SQLException {
     raiseSQLExceptionIfStatementIsClosed();
-    if (updateCount != -1 && sfStatement.getResultSet().getStatementType().isDML()) {
+    if (updateCount != -1 && sfBaseStatement.getResultSet().getStatementType().isDML()) {
       return updateCount;
     }
     return -1;
@@ -667,7 +678,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
   public void setCursorName(String name) throws SQLException {
     logger.debug("setCursorName(String name)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
@@ -684,7 +695,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     logger.debug("setFetchDirection(int direction)");
     raiseSQLExceptionIfStatementIsClosed();
     if (direction != ResultSet.FETCH_FORWARD) {
-      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
     }
   }
 
@@ -699,7 +710,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
   public void setMaxFieldSize(int max) throws SQLException {
     logger.debug("setMaxFieldSize(int max)");
 
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
@@ -710,8 +721,8 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
 
     this.maxRows = max;
     try {
-      if (this.sfStatement != null) {
-        this.sfStatement.addProperty("rows_per_resultset", max);
+      if (this.sfBaseStatement != null) {
+        this.sfBaseStatement.addProperty("rows_per_resultset", max);
       }
     } catch (SFException ex) {
       throw new SnowflakeSQLException(
@@ -725,7 +736,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     raiseSQLExceptionIfStatementIsClosed();
 
     if (poolable) {
-      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+      throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
     }
     this.poolable = poolable;
   }
@@ -741,8 +752,8 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     logger.debug("setParameter");
 
     try {
-      if (this.sfStatement != null) {
-        this.sfStatement.addProperty(name, value);
+      if (this.sfBaseStatement != null) {
+        this.sfBaseStatement.addProperty(name, value);
       }
     } catch (SFException ex) {
       throw new SnowflakeSQLException(ex);
@@ -756,8 +767,8 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
 
     this.queryTimeout = seconds;
     try {
-      if (this.sfStatement != null) {
-        this.sfStatement.addProperty("query_timeout", seconds);
+      if (this.sfBaseStatement != null) {
+        this.sfBaseStatement.addProperty("query_timeout", seconds);
       }
     } catch (SFException ex) {
       throw new SnowflakeSQLException(
@@ -787,13 +798,13 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
   @Override
   public void closeOnCompletion() throws SQLException {
     logger.debug("closeOnCompletion()");
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
   public boolean isCloseOnCompletion() throws SQLException {
     logger.debug("isCloseOnCompletion()");
-    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSfSession());
+    throw new SnowflakeLoggedFeatureNotSupportedException(connection.getSFBaseSession());
   }
 
   @Override
@@ -823,7 +834,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
       }
     }
     openResultSets.clear();
-    sfStatement.close();
+    sfBaseStatement.close();
     if (removeClosedStatementFromConnection) {
       connection.removeClosedStatement(this);
     }
@@ -835,7 +846,7 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
     raiseSQLExceptionIfStatementIsClosed();
 
     try {
-      sfStatement.cancel();
+      sfBaseStatement.cancel();
     } catch (SFException ex) {
       throw new SnowflakeSQLException(ex, ex.getSqlState(), ex.getVendorCode(), ex.getParams());
     }
@@ -886,12 +897,23 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
         }*/
       }
     } else {
-      this.sfStatement.executeSetProperty(sql);
+      this.sfBaseStatement.executeSetProperty(sql);
     }
   }
 
-  public SFStatement getSfStatement() throws SQLException {
-    return sfStatement;
+  public SFBaseStatement getSFBaseStatement() throws SQLException {
+    return sfBaseStatement;
+  }
+
+  // Convenience method to return an SFStatement-typed SFStatementInterface object, but
+  // performs the type-checking as necessary.
+  public SFStatement getSfStatement() throws SnowflakeSQLException {
+    if (sfBaseStatement instanceof SFStatement) {
+      return (SFStatement) sfBaseStatement;
+    }
+
+    throw new SnowflakeSQLException(
+        "getSfStatement() called with a different SFStatementInterface type.");
   }
 
   public void removeClosedResultSet(ResultSet rs) {
@@ -1214,12 +1236,6 @@ class SnowflakeStatementV1 implements Statement, SnowflakeStatement {
 
     @Override
     public void clearBatch() throws SQLException {}
-
-    @Override
-    public SFStatement getSfStatement() throws SQLException {
-      throwExceptionAnyway();
-      return null;
-    }
 
     @Override
     public void removeClosedResultSet(ResultSet rs) {}
