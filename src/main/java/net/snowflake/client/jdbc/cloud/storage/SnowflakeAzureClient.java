@@ -217,7 +217,7 @@ public class SnowflakeAzureClient implements SnowflakeStorageClient {
     try {
       // Get a reference to the BLOB, to retrieve its metadata
       CloudBlobContainer container = azStorageClient.getContainerReference(remoteStorageLocation);
-      CloudBlob blob = container.getBlobReferenceFromServer(prefix, null, null, null, opContext);
+      CloudBlob blob = container.getBlockBlobReference(prefix);
       blob.downloadAttributes(null, null, opContext);
 
       // Get the user-defined BLOB metadata
@@ -357,13 +357,7 @@ public class SnowflakeAzureClient implements SnowflakeStorageClient {
       try {
         CloudBlobContainer container = azStorageClient.getContainerReference(remoteStorageLocation);
 
-        CloudBlob blob =
-            container.getBlobReferenceFromServer(
-                stageFilePath,
-                null,
-                null,
-                null,
-                opContext); // container.getBlockBlobReference(stageFilePath);
+        CloudBlob blob = container.getBlockBlobReference(stageFilePath);
 
         InputStream stream = blob.openInputStream(null, null, opContext);
 

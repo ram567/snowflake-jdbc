@@ -12,11 +12,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.net.Authenticator;
 import java.net.PasswordAuthentication;
-import java.net.URL;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.Properties;
 import net.snowflake.client.category.TestCategoryOthers;
 import net.snowflake.common.core.SqlState;
@@ -25,6 +21,11 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.rules.TemporaryFolder;
+
+// To run these tests, you must:
+// 1.) Start up a proxy connection. The simplest ways are via Squid or BurpSuite
+// 2.) Enter your own username and password for the account you're connecting to
+// 3.) Adjust parameters like role, database, schema, etc to match with account accordingly
 
 @Category(TestCategoryOthers.class)
 public class CustomProxyIT {
@@ -42,11 +43,11 @@ public class CustomProxyIT {
     // should finish correctly
     runProxyConnection(connectionUrl);
 
-    /*connectionUrl =
-    "jdbc:snowflake://s3testaccount.us-east-1.snowflakecomputing.com/?tracing=ALL"
-        + "&proxyHost=localhost&proxyPort=3128"
-        + "&proxyUser=testuser1&proxyPassword=test"
-        + "&useProxy=true";*/
+    connectionUrl =
+        "jdbc:snowflake://s3testaccount.us-east-1.snowflakecomputing.com/?tracing=ALL"
+            + "&proxyHost=localhost&proxyPort=3128"
+            + "&proxyUser=testuser1&proxyPassword=test"
+            + "&useProxy=true";
     // should finish correctly
     runProxyConnection(connectionUrl);
   }
@@ -148,15 +149,9 @@ public class CustomProxyIT {
           }
         });
 
-    System.setProperty("http.useProxy", "true");
-    System.setProperty("http.proxyHost", "localhost");
-    System.setProperty("http.proxyPort", "8080");
-    System.setProperty("https.proxyHost", "localhost");
-    System.setProperty("https.proxyPort", "8080");
-
     // SET USER AND PASSWORD FIRST
-    String user = "mknister";
-    String passwd = "Argumentc1inicspam!";
+    String user = "USER";
+    String passwd = "PASSWORD";
     Properties _connectionProperties = new Properties();
     _connectionProperties.put("user", user);
     _connectionProperties.put("password", passwd);
@@ -175,12 +170,12 @@ public class CustomProxyIT {
           "Failed to put a file",
           stmt.execute(
               "PUT file://" + getFullPathFileInResource("orders_100.csv") + " @testPutGet_stage"));
-      /*String sql = "select $1 from values(1),(3),(5),(7)";
+      String sql = "select $1 from values(1),(3),(5),(7)";
       ResultSet res = stmt.executeQuery(sql);
       while (res.next()) {
         System.out.println("value: " + res.getInt(1));
       }
-      System.out.println("OK - " + counter);*/
+      System.out.println("OK - " + counter);
       con.close();
       counter++;
       break;
@@ -196,14 +191,14 @@ public class CustomProxyIT {
   }
 
   @Test
-  // @Ignore
+  @Ignore
   public void testProxyConnectionWithAzureWithConnectionString()
       throws ClassNotFoundException, SQLException {
     String connectionUrl =
         "jdbc:snowflake://aztestaccount.east-us-2.azure.snowflakecomputing.com/?tracing=ALL"
-            + "&proxyHost=localhost&proxyPort=8080"
+            + "&proxyHost=localhost&proxyPort=3128"
+            + "&proxyUser=testuser1&proxyPassword=test"
             + "&useProxy=true";
-    ;
     runAzureProxyConnection(connectionUrl, false);
   }
 
@@ -296,6 +291,11 @@ public class CustomProxyIT {
           }
         });
 
+    // Enable these parameters to use JVM proxy parameters instead of connection string proxy
+    // parameters.
+    // Connection parameters override JVM  proxy params, so these incorrect params won't cause
+    // failures IF
+    // connection proxy params are enabled and working.
     System.setProperty("http.useProxy", "true");
     System.setProperty("http.proxyHost", "fakehost");
     System.setProperty("http.proxyPort", "8081");
@@ -303,8 +303,8 @@ public class CustomProxyIT {
     System.setProperty("https.proxyPort", "8081");
 
     // SET USER AND PASSWORD FIRST
-    String user = "mknister";
-    String passwd = "Argumentc1inicspam!";
+    String user = "USER";
+    String passwd = "PASSWORD";
     Properties _connectionProperties = new Properties();
     _connectionProperties.put("user", user);
     _connectionProperties.put("password", passwd);
@@ -320,7 +320,6 @@ public class CustomProxyIT {
     Class.forName("net.snowflake.client.jdbc.SnowflakeDriver");
 
     String fileName = "test_copy.csv";
-    URL resource = StatementIT.class.getResource(fileName);
     Connection con = DriverManager.getConnection(connectionUrl, _connectionProperties);
     Statement stmt = con.createStatement();
     stmt.execute("create or replace warehouse MEGTEST");

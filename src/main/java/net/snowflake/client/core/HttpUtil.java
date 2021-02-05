@@ -4,7 +4,8 @@
 
 package net.snowflake.client.core;
 
-import static net.snowflake.client.jdbc.SnowflakeUtil.*;
+import static net.snowflake.client.jdbc.SnowflakeUtil.systemGetEnv;
+import static net.snowflake.client.jdbc.SnowflakeUtil.systemGetProperty;
 import static org.apache.http.client.config.CookieSpecs.DEFAULT;
 import static org.apache.http.client.config.CookieSpecs.IGNORE_COOKIES;
 
@@ -89,12 +90,13 @@ public class HttpUtil {
   /** customized proxy properties */
   static boolean useProxy = false;
 
+  static boolean httpUseProxy = false;
+
   static String proxyHost;
   static int proxyPort;
   static String proxyUser;
   static String proxyPassword;
   static String nonProxyHosts;
-  static String httpUseProxy;
 
   public static long getDownloadedConditionTimeoutInSeconds() {
     return DEFAULT_DOWNLOADED_CONDITION_TIMEOUT;
@@ -637,11 +639,9 @@ public class HttpUtil {
       nonProxyHosts = (String) connectionPropertiesMap.get(SFSessionProperty.NON_PROXY_HOSTS);
     }
 
-    httpUseProxy = systemGetProperty("http.useProxy");
-    if (Strings.isNullOrEmpty(httpUseProxy)) {
-      httpUseProxy = "false";
-    }
-    if (httpUseProxy.equalsIgnoreCase("true")) {
+    // parse JVM proxy settings. Print them out if JVM proxy is in usage.
+    httpUseProxy = Boolean.parseBoolean(systemGetProperty("http.useProxy"));
+    if (httpUseProxy) {
       String httpProxyHost = systemGetProperty("http.proxyHost");
       String httpProxyPort = systemGetProperty("http.proxyPort");
       String httpsProxyHost = systemGetProperty("https.proxyHost");
@@ -658,6 +658,8 @@ public class HttpUtil {
     } else {
       logger.debug("http.useProxy={}. JVM proxy not used.", httpUseProxy);
     }
+    // Always print off connection string proxy parameters. These override JVM proxy parameters if
+    // use_proxy=true.
     logger.debug(
         "connection proxy parameters: use_proxy={}, proxy_host={}, proxy_port={}, proxy_user={}, proxy_password={}, non_proxy_hosts={}",
         useProxy,
